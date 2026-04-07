@@ -9,7 +9,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install dev docker-build docker-up docker-down docker-logs db-init lint fmt test clean ci
+.PHONY: help install dev docker-build docker-up docker-down docker-logs db-init lint fmt test test-cov test-unit test-config test-schemas test-services test-api clean ci
 
 # -----------------------------------------------------------------------------
 # Target: install
@@ -104,9 +104,29 @@ fmt: ## Format and fix code with ruff
 # When to use: 本地测试或 CI 流程中使用。
 # Example: make test
 #          make test ARGS="-v -k test_analyze"
+#          make test-cov      # 运行测试并生成覆盖率报告
+#          make test-unit     # 仅运行单元测试
 # -----------------------------------------------------------------------------
 test: ## Run tests with pytest
-	pytest tests/ -v $(ARGS)
+	EMBEDDING_MODEL_URL="https://test.com" EMBEDDING_MODEL_API_KEY="test-key" pytest tests/ -v $(ARGS)
+
+test-cov: ## Run tests with coverage report
+	EMBEDDING_MODEL_URL="https://test.com" EMBEDDING_MODEL_API_KEY="test-key" pytest tests/ -v --cov=app --cov-report=term-missing --cov-report=html $(ARGS)
+
+test-unit: ## Run unit tests only (excluding integration)
+	EMBEDDING_MODEL_URL="https://test.com" EMBEDDING_MODEL_API_KEY="test-key" pytest tests/ -v -m "not integration" $(ARGS)
+
+test-config: ## Run config/settings tests only
+	EMBEDDING_MODEL_URL="https://test.com" EMBEDDING_MODEL_API_KEY="test-key" pytest tests/test_config.py -v
+
+test-schemas: ## Run schema validation tests only
+	EMBEDDING_MODEL_URL="https://test.com" EMBEDDING_MODEL_API_KEY="test-key" pytest tests/test_schemas.py -v
+
+test-services: ## Run service layer tests only
+	EMBEDDING_MODEL_URL="https://test.com" EMBEDDING_MODEL_API_KEY="test-key" pytest tests/test_retrieval.py tests/test_embedding.py -v
+
+test-api: ## Run API endpoint tests only
+	EMBEDDING_MODEL_URL="https://test.com" EMBEDDING_MODEL_API_KEY="test-key" pytest tests/test_analyze.py tests/test_data.py tests/test_main.py -v
 
 # -----------------------------------------------------------------------------
 # Target: clean

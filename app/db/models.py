@@ -1,10 +1,9 @@
 import uuid
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import ARRAY, Column, Computed, Index, Numeric, String, Text
+from sqlalchemy import ARRAY, Column, Computed, DateTime, Index, Numeric, String, Text, func
 from sqlalchemy.dialects.postgresql import TSVECTOR, UUID
 from sqlalchemy.orm import declarative_base
-from sqlalchemy.sql import func
 
 Base = declarative_base()
 
@@ -24,8 +23,8 @@ class Case(Base):
     # In production with zhparser, it would be 'zhparser'.
     content_tsv = Column(TSVECTOR, Computed("to_tsvector('english', description)", persisted=True))
 
-    created_at = Column(func.now())
-    updated_at = Column(func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     __table_args__ = (
         Index(
@@ -53,8 +52,8 @@ class Tip(Base):
         TSVECTOR, Computed("to_tsvector('english', title || ' ' || content)", persisted=True)
     )
 
-    created_at = Column(func.now())
-    updated_at = Column(func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     __table_args__ = (
         Index(
