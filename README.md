@@ -170,6 +170,89 @@ tip = await rag.add_tip(
 
 ## 架构说明
 
+### 系统架构图
+
+```mermaid
+graph TB
+    subgraph Client["客户端"]
+        A[用户代码]
+    end
+
+    subgraph Core["核心层"]
+        B[AntiFraudRAG]
+    end
+
+    subgraph Services["服务层"]
+        C[EmbeddingService]
+        D[RetrievalService]
+        E[PromptsBuilder]
+    end
+
+    subgraph Database["数据层"]
+        F[(PostgreSQL<br/>+ pgvector)]
+        G[cases_table]
+        H[tips_table]
+    end
+
+    subgraph External["外部服务"]
+        I[Embedding API]
+    end
+
+    A -->|analyze/add_case/add_tip| B
+    B -->|get_embeddings| C
+    C -->|HTTP请求| I
+    I -->|向量| C
+    B -->|search_bm25/search_vector/rrf_fusion| D
+    D -->|SQL查询| F
+    F --> G
+    F --> H
+    B -->|build_prompt| E
+
+    style A fill:#e1f5fe
+    style B fill:#fff3e0
+    style C fill:#f3e5f5
+    style D fill:#f3e5f5
+    style E fill:#f3e5f5
+    style F fill:#e8f5e9
+    style I fill:#ffebee
+```
+
+### 核心流程：analyze 方法
+
+```mermaid
+flowchart TD
+    Start([用户调用 analyze]) --> A[获取查询文本 embedding]
+    A --> B[并行执行 BM25 + 向量搜索]
+    
+    B --> C1[BM25 搜索<br/>PostgreSQL tsvector]
+    B --> C2[向量搜索<br/>pgvector 余弦相似度]
+    
+    C1 --> D[RRF 融合排序<br/>k=60]
+    C2 --> D
+    
+    D --> E{是否有结果?}
+    
+    E -->|无结果| F[搜索 Tips 知识库]
+    F --> G[返回 RAG_Prompt<br/>risk_level=LOW]
+    
+    E -->|有结果| H[获取 Top1 分数]
+    H --> I{score >= 0.85?}
+    
+    I -->|是| J[返回 Direct_Hit<br/>risk_level=HIGH]
+    I -->|否| K[搜索 Tips 知识库]
+    K --> L[返回 RAG_Prompt<br/>risk_level=MEDIUM/LOW]
+    
+    G --> End([返回 AnalysisResponse])
+    J --> End
+    L --> End
+
+    style Start fill:#e1f5fe
+    style End fill:#e8f5e9
+    style J fill:#ffcdd2
+    style G fill:#fff9c4
+    style L fill:#fff9c4
+```
+
 ### 混合检索机制
 
 1. **BM25 检索**: PostgreSQL `tsvector` 全文搜索，精确关键词匹配
