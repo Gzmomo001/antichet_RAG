@@ -328,4 +328,4 @@ MIT License
 ## 参考
 
 - [pgvector](https://github.com/pgvector/pgvector)
-- [RRF 融合算法](https://plg.uwaterloo.ca/~gvcormac/cormack-rrf.pdf)
+- [RRF 融合算法](https://dl.acm.org/doi/epdf/10.1145/1571941.1572114)
