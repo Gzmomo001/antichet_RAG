@@ -84,23 +84,40 @@ class TestRetrievalServiceRRF:
         result_ids = [r["item"].id for r in result]
         assert result_ids[0] == "case2"
 
-    def test_rrf_fusion_custom_k_parameter(self):
-        """Test RRF fusion with custom k parameter."""
+    def test_rrf_fusion_normalize_parameter(self):
+        """Test normalize parameter controls score normalization."""
         mock_db = AsyncMock()
         service = RetrievalService(mock_db)
 
-        mock_case1 = MagicMock(spec=Case)
-        mock_case1.id = "case1"
-        mock_case2 = MagicMock(spec=Case)
-        mock_case2.id = "case2"
+        mock_case = MagicMock(spec=Case)
+        mock_case.id = "case1"
 
-        result_default = service.rrf_fusion([(mock_case1, 0.9)], [(mock_case2, 0.9)], k=60)
-        result_custom = service.rrf_fusion([(mock_case1, 0.9)], [(mock_case2, 0.9)], k=100)
+        result_normalized = service.rrf_fusion([(mock_case, 1.0)], [], normalize=True)
+        result_raw = service.rrf_fusion([(mock_case, 1.0)], [], normalize=False)
 
-        assert result_default[0]["score"] > result_custom[0]["score"]
+        assert result_normalized[0]["score"] > result_raw[0]["score"]
+
+    def test_rrf_fusion_combined_item_scores_higher(self):
+        """Item in both lists scores higher than item in only one list."""
+        mock_db = AsyncMock()
+        service = RetrievalService(mock_db)
+
+        mock_case_a = MagicMock(spec=Case)
+        mock_case_a.id = "case_a"
+        mock_case_b = MagicMock(spec=Case)
+        mock_case_b.id = "case_b"
+
+        bm25_results = [(mock_case_a, 0.9)]
+        vector_results = [(mock_case_a, 0.8), (mock_case_b, 0.7)]
+
+        result = service.rrf_fusion(bm25_results, vector_results)
+
+        assert len(result) == 2
+        assert result[0]["item"].id == "case_a"
+        assert result[0]["score"] > result[1]["score"]
 
     def test_rrf_fusion_score_calculation(self):
-        """Test RRF score calculation formula."""
+        """Test RRF score calculation formula (normalized)."""
         mock_db = AsyncMock()
         service = RetrievalService(mock_db)
 
@@ -108,7 +125,9 @@ class TestRetrievalServiceRRF:
         mock_case.id = "case1"
 
         result = service.rrf_fusion([(mock_case, 1.0)], [])
-        expected_score = 1 / (60 + 0 + 1)
+        raw_score = 1 / (60 + 0 + 1)
+        max_score = 2 / (60 + 1)
+        expected_score = raw_score / max_score
         assert result[0]["score"] == pytest.approx(expected_score)
 
     def test_rrf_fusion_results_sorted_by_score(self):

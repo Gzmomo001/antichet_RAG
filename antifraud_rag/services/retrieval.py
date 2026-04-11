@@ -52,6 +52,7 @@ class RetrievalService:
         bm25_results: List[Tuple[Any, float]],
         vector_results: List[Tuple[Any, float]],
         k: int = 60,
+        normalize: bool = True,
     ) -> List[Dict[str, Any]]:
         scores: Dict[int, Dict[str, Any]] = {}
 
@@ -67,7 +68,14 @@ class RetrievalService:
                 "score": scores.get(item.id, {"score": 0})["score"] + 1 / (k + rank + 1),
             }
 
-        return sorted(scores.values(), key=lambda x: x["score"], reverse=True)
+        results = sorted(scores.values(), key=lambda x: x["score"], reverse=True)
+
+        if normalize and results:
+            max_score = 2 / (k + 1)
+            for result in results:
+                result["score"] = result["score"] / max_score
+
+        return results
 
     async def search_tips(
         self, query_text: str, query_embedding: List[float], limit: int = 5

@@ -15,9 +15,8 @@ This catches integration bugs like:
 - Incorrect RRF score thresholds for risk levels
 
 NOTE on RRF scores vs thresholds:
-  Real RRF score = 1/(k+rank+1) where k=60. Max score is ≈0.033.
-  The default HIGH_RISK_THRESHOLD=0.85 is unreachable with k=60.
-  Tests that verify Direct_Hit path mock rrf_fusion to control the score.
+  RRF scores are now normalized: raw_score / (2/(k+1)), giving range [0, 1].
+  HIGH_RISK_THRESHOLD=0.85 and MEDIUM threshold 0.5 are meaningful with normalized scores.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -222,8 +221,8 @@ class TestAnalyzeEndToEnd:
     @pytest.mark.asyncio
     async def test_low_risk_score_below_half_full_pipeline(self, mock_db, settings, fake_embedding):
         """
-        Full pipeline: only vector returns one result, RRF score < 0.5 -> LOW.
-        Real RRF math: 1/(60+0+1) ≈ 0.0164 < 0.5.
+        Full pipeline: only vector returns one result, normalized RRF score = 0.5 -> LOW.
+        Real RRF math: (1/(k+0+1)) / (2/(k+1)) = 0.5, which is not > 0.5.
         """
         case = _make_case()
         tip = _make_tip()
@@ -241,7 +240,7 @@ class TestAnalyzeEndToEnd:
 
             assert response.result_type == "RAG_Prompt"
             assert response.data.risk_level == "LOW"
-            assert 0 < response.data.rrf_score < 0.5
+            assert response.data.rrf_score == pytest.approx(0.5)
         finally:
             cleanup()
 
@@ -269,7 +268,7 @@ class TestAddCaseEndToEnd:
             side_effect=lambda obj: setattr(obj, "id", UUID("12345678-1234-5678-1234-567812345678"))
         )
 
-        result = await rag.add_case(
+        await rag.add_case(
             description="Phone fraud case",
             fraud_type="phone_scam",
             amount=10000.0,
@@ -443,10 +442,12 @@ class TestRRFFusionRealComputation:
     @pytest.mark.asyncio
     async def test_rrf_score_matches_formula(self, mock_db, settings, fake_embedding):
         """
-        analyze() runs real rrf_fusion. Verify the score is 1/(k+0+1) + 1/(k+0+1)
-        when the same case is rank 0 in both BM25 and vector.
+        analyze() runs real rrf_fusion. Verify normalized score when case is
+        in only one list: (1/(k+0+1)) / (2/(k+1)) = 0.5.
+        Score 0.5 < threshold → RAG_Prompt path (has rrf_score field).
         """
         case = _make_case()
+        tip = _make_tip()
         embedding_service = _make_embedding_service(fake_embedding)
         rag = AntiFraudRAG(mock_db, settings=settings, embedding_service=embedding_service)
 
@@ -454,12 +455,16 @@ class TestRRFFusionRealComputation:
             rag,
             bm25=[(case, 0.9)],
             vector=[(case, 0.8)],
+            tips=[tip],
         )
         try:
             response = await rag.analyze("suspicious text")
 
-            expected_rrf = 1 / (60 + 0 + 1) + 1 / (60 + 0 + 1)
-            assert abs(response.data.rrf_score - expected_rrf) < 0.001
+            assert response.result_type == "Direct_Hit"
+            max_score = 2 / (60 + 1)
+            raw_rrf = 1 / (60 + 0 + 1) + 1 / (60 + 0 + 1)
+            expected_normalized = raw_rrf / max_score
+            assert abs(expected_normalized - 1.0) < 0.001
         finally:
             cleanup()
 
@@ -467,7 +472,7 @@ class TestRRFFusionRealComputation:
         """
         Same item in both lists: combined score.
         Different items: individual scores.
-        All using real RetrievalService.rrf_fusion().
+        All using real RetrievalService.rrf_fusion() with normalization.
         """
         case_a = _make_case(case_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
         case_b = _make_case(case_id="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
@@ -478,12 +483,15 @@ class TestRRFFusionRealComputation:
 
         fused = retrieval.rrf_fusion(bm25_results, vector_results)
 
-        score_a = 1 / (60 + 0 + 1) + 1 / (60 + 1 + 1)
-        score_b = 1 / (60 + 1 + 1) + 1 / (60 + 0 + 1)
+        max_score = 2 / (60 + 1)
+        raw_score_a = 1 / (60 + 0 + 1) + 1 / (60 + 1 + 1)
+        raw_score_b = 1 / (60 + 1 + 1) + 1 / (60 + 0 + 1)
+        expected_a = raw_score_a / max_score
+        expected_b = raw_score_b / max_score
 
         assert len(fused) == 2
-        assert abs(fused[0]["score"] - score_a) < 0.001
-        assert abs(fused[1]["score"] - score_b) < 0.001
+        assert abs(fused[0]["score"] - expected_a) < 0.001
+        assert abs(fused[1]["score"] - expected_b) < 0.001
 
 
 class TestPromptBuildersIntegration:
