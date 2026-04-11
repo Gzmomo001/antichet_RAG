@@ -49,19 +49,19 @@ fmt: ## Format and fix code with ruff
 #          make test-cov      # 运行测试并生成覆盖率报告
 # -----------------------------------------------------------------------------
 test: ## Run tests with pytest
-	EMBEDDING_MODEL_URL="https://test.com" EMBEDDING_MODEL_API_KEY="test-key" pytest tests/ -v $(ARGS)
+	pytest tests/ -v $(ARGS)
 
 test-cov: ## Run tests with coverage report
-	EMBEDDING_MODEL_URL="https://test.com" EMBEDDING_MODEL_API_KEY="test-key" pytest tests/ -v --cov=antifraud_rag --cov-report=term-missing --cov-report=html $(ARGS)
+	pytest tests/ -v --cov=antifraud_rag --cov-report=term-missing --cov-report=html $(ARGS)
 
 test-config: ## Run config/settings tests only
-	EMBEDDING_MODEL_URL="https://test.com" EMBEDDING_MODEL_API_KEY="test-key" pytest tests/test_config.py -v
+	pytest tests/test_config.py -v
 
 test-schemas: ## Run schema validation tests only
-	EMBEDDING_MODEL_URL="https://test.com" EMBEDDING_MODEL_API_KEY="test-key" pytest tests/test_schemas.py -v
+	pytest tests/test_schemas.py -v
 
 test-services: ## Run service layer tests only
-	EMBEDDING_MODEL_URL="https://test.com" EMBEDDING_MODEL_API_KEY="test-key" pytest tests/test_retrieval.py tests/test_embedding.py -v
+	pytest tests/test_retrieval.py tests/test_embedding.py -v
 
 # -----------------------------------------------------------------------------
 # Target: clean

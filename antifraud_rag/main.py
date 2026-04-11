@@ -46,11 +46,11 @@ class AntiFraudRAG:
     def __init__(
         self,
         db: AsyncSession,
-        settings: Optional[Settings] = None,
+        settings: Settings,
         embedding_service: Optional[EmbeddingService] = None,
     ):
         self.db = db
-        self.settings = settings or Settings()
+        self.settings = settings
         self.embedding_service = embedding_service or EmbeddingService(settings=self.settings)
         self.retrieval_service = RetrievalService(db)
 

@@ -16,15 +16,17 @@ make fmt           # ruff format + fix
 make ci            # lint + test
 ```
 
-## Required Environment Variables
+## Configuration
 
-```bash
-EMBEDDING_MODEL_URL=https://your-embedding-api.com/v1/embeddings
-EMBEDDING_MODEL_API_KEY=your-key
-DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/db
+All config is passed explicitly via `Settings` (no env vars). `EMBEDDING_MODEL_URL` and `EMBEDDING_MODEL_API_KEY` are required.
+
+```python
+settings = Settings(
+    EMBEDDING_MODEL_URL="https://your-embedding-api.com/v1/embeddings",
+    EMBEDDING_MODEL_API_KEY="your-key",
+    DATABASE_URL="postgresql+asyncpg://user:pass@host:5432/db",  # optional
+)
 ```
-
-Tests automatically set mock values for `EMBEDDING_MODEL_URL` and `EMBEDDING_MODEL_API_KEY`.
 
 ## Architecture
 
@@ -32,7 +34,7 @@ Tests automatically set mock values for `EMBEDDING_MODEL_URL` and `EMBEDDING_MOD
 antifraud_rag/
 ├── main.py              # AntiFraudRAG class (core entrypoint)
 ├── schemas.py           # Pydantic response schemas
-├── core/config.py       # Settings via pydantic-settings
+├── core/config.py       # Settings (Pydantic BaseModel)
 ├── db/
 │   ├── models.py        # Case, Tip (SQLAlchemy + pgvector)
 │   └── session.py       # Async engine config
@@ -68,7 +70,7 @@ async with get_session() as db:
 docker-compose up -d
 
 # Init tables + pgvector extension
-python scripts/init_db.py
+python scripts/init_db.py --db-url postgresql+asyncpg://user:pass@localhost:5432/antifraud
 ```
 
 English tokenizer used for tsvector; zhparser commented out in `init_db.py`.

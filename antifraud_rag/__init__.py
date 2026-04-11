@@ -4,11 +4,13 @@ Anti-Fraud RAG System - 反欺诈 RAG 系统
 一个基于混合搜索（BM25 + 向量 + RRF）的反欺诈分析系统。
 
 使用示例:
-    from antifraud_rag import AntiFraudRAG
-    from antifraud_rag.core.config import Settings
+    from antifraud_rag import AntiFraudRAG, Settings
 
-    # 初始化
-    settings = Settings(EMBEDDING_MODEL_URL="...", EMBEDDING_MODEL_API_KEY="...")
+    # 初始化 (所有配置通过参数传入)
+    settings = Settings(
+        EMBEDDING_MODEL_URL="https://your-api.com/v1/embeddings",
+        EMBEDDING_MODEL_API_KEY="your-api-key",
+    )
     rag = AntiFraudRAG(db_session, settings=settings)
 
     # 分析文本风险

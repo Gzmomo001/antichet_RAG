@@ -55,12 +55,10 @@ def mock_tip():
 class TestAntiFraudRAGClass:
     """Tests for AntiFraudRAG class."""
 
-    def test_init_with_default_settings(self, mock_db):
-        """Test AntiFraudRAG initializes with default settings."""
-        with patch("antifraud_rag.main.Settings") as mock_settings_class:
-            mock_settings_class.return_value = MagicMock(HIGH_RISK_THRESHOLD=0.85)
-            rag = AntiFraudRAG(mock_db)
-            assert rag.db == mock_db
+    def test_init_without_settings_raises(self, mock_db):
+        """Test AntiFraudRAG raises when settings is not provided."""
+        with pytest.raises(TypeError):
+            AntiFraudRAG(mock_db)
 
     def test_init_with_custom_settings(self, mock_db, mock_settings):
         """Test AntiFraudRAG initializes with custom settings."""

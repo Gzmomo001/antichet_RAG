@@ -1,17 +1,12 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BaseModel, ConfigDict
 
 
-class Settings(BaseSettings):
-    # Embedding Model API
+class Settings(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     EMBEDDING_MODEL_URL: str
     EMBEDDING_MODEL_API_KEY: str
     EMBEDDING_MODEL_NAME: str = "text-embedding-ada-002"
     EMBEDDING_DIMENSION: int = 1536
-
-    # Application
     HIGH_RISK_THRESHOLD: float = 0.85
-
-    # Database (optional, only needed if using built-in session management)
     DATABASE_URL: str = "postgresql+asyncpg://user:pass@db:5432/antifraud"
-
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
