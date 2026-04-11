@@ -193,6 +193,170 @@ class TestAntiFraudRAGClass:
             assert len(results) == 1
             assert results[0]["rrf_score"] == 0.92
 
+    @pytest.mark.asyncio
+    async def test_analyze_returns_low_risk_when_no_matches(
+        self, mock_db, mock_settings, mock_embedding_service, mock_tip
+    ):
+        rag = AntiFraudRAG(
+            mock_db, settings=mock_settings, embedding_service=mock_embedding_service
+        )
+
+        with patch.object(rag, "retrieval_service") as mock_retrieval:
+            mock_retrieval.search_cases_bm25 = AsyncMock(return_value=[])
+            mock_retrieval.search_cases_vector = AsyncMock(return_value=[])
+            mock_retrieval.rrf_fusion = MagicMock(return_value=[])
+            mock_retrieval.search_tips = AsyncMock(return_value=[mock_tip])
+
+            response = await rag.analyze("innocent query")
+
+            assert response.result_type == "RAG_Prompt"
+            assert response.data.risk_level == "LOW"
+            assert response.data.rrf_score == 0.0
+
+    @pytest.mark.asyncio
+    async def test_analyze_returns_medium_when_score_between_thresholds(
+        self, mock_db, mock_settings, mock_embedding_service, mock_case, mock_tip
+    ):
+        rag = AntiFraudRAG(
+            mock_db, settings=mock_settings, embedding_service=mock_embedding_service
+        )
+
+        with patch.object(rag, "retrieval_service") as mock_retrieval:
+            mock_retrieval.search_cases_bm25 = AsyncMock(return_value=[(mock_case, 0.6)])
+            mock_retrieval.search_cases_vector = AsyncMock(return_value=[(mock_case, 0.7)])
+            mock_retrieval.rrf_fusion = MagicMock(return_value=[{"item": mock_case, "score": 0.6}])
+            mock_retrieval.search_tips = AsyncMock(return_value=[mock_tip])
+
+            response = await rag.analyze("suspicious query")
+
+            assert response.result_type == "RAG_Prompt"
+            assert response.data.risk_level == "MEDIUM"
+
+    @pytest.mark.asyncio
+    async def test_analyze_returns_low_when_score_below_half(
+        self, mock_db, mock_settings, mock_embedding_service, mock_case, mock_tip
+    ):
+        rag = AntiFraudRAG(
+            mock_db, settings=mock_settings, embedding_service=mock_embedding_service
+        )
+
+        with patch.object(rag, "retrieval_service") as mock_retrieval:
+            mock_retrieval.search_cases_bm25 = AsyncMock(return_value=[(mock_case, 0.3)])
+            mock_retrieval.search_cases_vector = AsyncMock(return_value=[(mock_case, 0.4)])
+            mock_retrieval.rrf_fusion = MagicMock(return_value=[{"item": mock_case, "score": 0.3}])
+            mock_retrieval.search_tips = AsyncMock(return_value=[mock_tip])
+
+            response = await rag.analyze("vaguely suspicious query")
+
+            assert response.result_type == "RAG_Prompt"
+            assert response.data.risk_level == "LOW"
+
+    @pytest.mark.asyncio
+    async def test_analyze_raises_on_embedding_error(
+        self, mock_db, mock_settings, mock_embedding_service
+    ):
+        mock_embedding_service.get_embeddings = AsyncMock(side_effect=Exception("API down"))
+
+        rag = AntiFraudRAG(
+            mock_db, settings=mock_settings, embedding_service=mock_embedding_service
+        )
+
+        with pytest.raises(RuntimeError, match="Embedding error"):
+            await rag.analyze("test query")
+
+    @pytest.mark.asyncio
+    async def test_add_case_with_optional_fields(
+        self, mock_db, mock_settings, mock_embedding_service
+    ):
+        rag = AntiFraudRAG(
+            mock_db, settings=mock_settings, embedding_service=mock_embedding_service
+        )
+
+        mock_case = MagicMock(spec=Case)
+        mock_case.id = UUID("12345678-1234-5678-1234-567812345678")
+        mock_db.add = MagicMock()
+        mock_db.commit = AsyncMock()
+        mock_db.refresh = AsyncMock(return_value=mock_case)
+
+        with patch("antifraud_rag.main.Case") as mock_case_class:
+            mock_case_class.return_value = mock_case
+            result = await rag.add_case(
+                description="test",
+                fraud_type="phishing",
+                amount=9999.99,
+                keywords=["urgent", "transfer"],
+            )
+
+            mock_case_class.assert_called_once_with(
+                description="test",
+                fraud_type="phishing",
+                amount=9999.99,
+                keywords=["urgent", "transfer"],
+                embedding=[0.1] * 1536,
+            )
+            assert result == mock_case
+
+    @pytest.mark.asyncio
+    async def test_add_tip_uses_title_and_content_for_embedding(
+        self, mock_db, mock_settings, mock_embedding_service
+    ):
+        rag = AntiFraudRAG(
+            mock_db, settings=mock_settings, embedding_service=mock_embedding_service
+        )
+
+        mock_tip = MagicMock(spec=Tip)
+        mock_tip.id = UUID("87654321-4321-8765-4321-876543218765")
+        mock_db.add = MagicMock()
+        mock_db.commit = AsyncMock()
+        mock_db.refresh = AsyncMock(return_value=mock_tip)
+
+        with patch("antifraud_rag.main.Tip") as mock_tip_class:
+            mock_tip_class.return_value = mock_tip
+            await rag.add_tip(title="Title", content="Content", category="general")
+
+            mock_embedding_service.get_embeddings.assert_called_once_with("Title Content")
+
+    @pytest.mark.asyncio
+    async def test_hybrid_search_respects_limit(
+        self, mock_db, mock_settings, mock_embedding_service
+    ):
+        rag = AntiFraudRAG(
+            mock_db, settings=mock_settings, embedding_service=mock_embedding_service
+        )
+
+        mock_case = MagicMock(spec=Case)
+        mock_case.id = UUID("12345678-1234-5678-1234-567812345678")
+        mock_case.description = "Case"
+        mock_case.fraud_type = "scam"
+
+        fused_results = [
+            {"item": mock_case, "score": 0.9},
+            {"item": mock_case, "score": 0.8},
+            {"item": mock_case, "score": 0.7},
+        ]
+
+        with patch.object(rag, "retrieval_service") as mock_retrieval:
+            mock_retrieval.search_cases_bm25 = AsyncMock(return_value=[])
+            mock_retrieval.search_cases_vector = AsyncMock(return_value=[])
+            mock_retrieval.rrf_fusion = MagicMock(return_value=fused_results)
+
+            results = await rag.hybrid_search("test", limit=2)
+            assert len(results) == 2
+
+    @pytest.mark.asyncio
+    async def test_search_similar_cases_empty_results(
+        self, mock_db, mock_settings, mock_embedding_service
+    ):
+        rag = AntiFraudRAG(
+            mock_db, settings=mock_settings, embedding_service=mock_embedding_service
+        )
+
+        with patch.object(rag, "retrieval_service") as mock_retrieval:
+            mock_retrieval.search_cases_vector = AsyncMock(return_value=[])
+
+            results = await rag.search_similar_cases("test query")
+            assert results == []
+
 
 class TestAntiFraudRAGIntegration:
     """Integration tests showing usage pattern."""

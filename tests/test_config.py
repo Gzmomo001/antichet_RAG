@@ -64,6 +64,15 @@ class TestSettings:
         )
         assert settings_high.HIGH_RISK_THRESHOLD == 1.0
 
+    def test_settings_extra_fields_ignored(self):
+        """Test Settings ignores extra fields (extra='ignore')."""
+        settings = Settings(
+            EMBEDDING_MODEL_URL="https://api.test.com",
+            EMBEDDING_MODEL_API_KEY="test-key",
+            UNKNOWN_FIELD="ignored",
+        )
+        assert not hasattr(settings, "UNKNOWN_FIELD")
+
     def test_settings_dimension_accepts_positive_values(self):
         """Test EMBEDDING_DIMENSION accepts positive values."""
         settings = Settings(
