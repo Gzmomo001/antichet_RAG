@@ -1,0 +1,17 @@
+"""
+Constants for Anti-Fraud RAG system.
+"""
+
+RRF_K: int = 60
+RRF_NORMALIZATION_FACTOR: float = 2.0 / (RRF_K + 1)
+
+DEFAULT_SEARCH_LIMIT: int = 20
+DEFAULT_TIPS_LIMIT: int = 5
+TOP_RESULTS_COUNT: int = 3
+
+EMBEDDING_TIMEOUT: float = 10.0
+EMBEDDING_DIMENSION: int = 1536
+
+HIGH_RISK_THRESHOLD: float = 0.85
+MEDIUM_RISK_THRESHOLD: float = 0.5
+MIN_MATCH_SCORE: float = 0.1

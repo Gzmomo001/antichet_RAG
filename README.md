@@ -33,22 +33,21 @@ cd antifraud-rag
 make install
 ```
 
-## 环境配置
+## 配置
 
-必需环境变量:
+通过 `Settings` 类显式传入配置（不依赖环境变量）：
 
-```bash
-EMBEDDING_MODEL_URL=https://your-embedding-api.com/v1/embeddings
-EMBEDDING_MODEL_API_KEY=your-api-key
-DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/dbname
-```
+```python
+from antifraud_rag import Settings
 
-可选配置:
-
-```bash
-EMBEDDING_MODEL_NAME=text-embedding-ada-002  # 模型名称
-EMBEDDING_DIMENSION=1536                     # 向量维度
-HIGH_RISK_THRESHOLD=0.85                     # 高危阈值 (0-1)
+settings = Settings(
+    EMBEDDING_MODEL_URL="https://your-embedding-api.com/v1/embeddings",  # 必需
+    EMBEDDING_MODEL_API_KEY="your-api-key",                              # 必需
+    DATABASE_URL="postgresql+asyncpg://user:pass@host:5432/dbname",      # 可选
+    EMBEDDING_MODEL_NAME="text-embedding-ada-002",                       # 可选，默认 "text-embedding-ada-002"
+    EMBEDDING_DIMENSION=1536,                                            # 可选，默认 1536
+    HIGH_RISK_THRESHOLD=0.85                                             # 可选，默认 0.85
+)
 ```
 
 ## 快速开始
@@ -57,16 +56,16 @@ HIGH_RISK_THRESHOLD=0.85                     # 高危阈值 (0-1)
 
 ```bash
 docker-compose up -d
-python scripts/init_db.py
+python scripts/init_db.py --db-url postgresql+asyncpg://user:pass@localhost:5432/antifraud
 ```
 
 ### 2. 使用 AntiFraudRAG
 
 ```python
 from antifraud_rag import AntiFraudRAG, Settings
-from antifraud_rag.db.session import init_engine, get_session
+from antifraud_rag.db.session import get_session, init_engine
 
-# 初始化配置
+# 初始化配置（必需）
 settings = Settings(
     EMBEDDING_MODEL_URL="https://api.example.com/v1/embeddings",
     EMBEDDING_MODEL_API_KEY="your-key",
@@ -76,7 +75,7 @@ settings = Settings(
 # 初始化数据库引擎
 init_engine(settings)
 
-# 创建 RAG 实例
+# 创建 RAG 实例（settings 为必需参数）
 async with get_session() as db:
     rag = AntiFraudRAG(db, settings=settings)
     
@@ -314,7 +313,7 @@ antifraud_rag/
 - `sqlalchemy[asyncio]>=2.0.35`
 - `asyncpg>=0.30.0`
 - `pgvector==0.2.5`
-- `pydantic-settings==2.2.1`
+- `pydantic>=2.0`
 - `httpx==0.27.0`
 
 可选依赖:

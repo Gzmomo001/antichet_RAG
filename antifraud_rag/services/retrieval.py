@@ -1,8 +1,14 @@
+from collections import defaultdict
 from typing import Any, Dict, List, Tuple
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from antifraud_rag.core.constants import (
+    DEFAULT_SEARCH_LIMIT,
+    DEFAULT_TIPS_LIMIT,
+    RRF_K,
+)
 from antifraud_rag.db.models import Case, Tip
 
 
@@ -11,7 +17,7 @@ class RetrievalService:
         self.db = db
 
     async def search_cases_vector(
-        self, query_embedding: List[float], limit: int = 20
+        self, query_embedding: List[float], limit: int = DEFAULT_SEARCH_LIMIT
     ) -> List[Tuple[Case, float]]:
         # Vector search using pgvector cosine distance
         query = (
@@ -23,7 +29,9 @@ class RetrievalService:
         result = await self.db.execute(query)
         return result.all()
 
-    async def search_cases_bm25(self, query_text: str, limit: int = 20) -> List[Tuple[Case, float]]:
+    async def search_cases_bm25(
+        self, query_text: str, limit: int = DEFAULT_SEARCH_LIMIT
+    ) -> List[Tuple[Case, float]]:
         # BM25 search using PostgreSQL ts_rank
         sql = text("""
             SELECT id, ts_rank(content_tsv, plainto_tsquery('english', :query)) as score
@@ -51,34 +59,38 @@ class RetrievalService:
         self,
         bm25_results: List[Tuple[Any, float]],
         vector_results: List[Tuple[Any, float]],
-        k: int = 60,
+        k: int = RRF_K,
         normalize: bool = True,
     ) -> List[Dict[str, Any]]:
-        scores: Dict[int, Dict[str, Any]] = {}
+        """
+        Reciprocal Rank Fusion (RRF) algorithm to combine multiple search rankings.
+        """
+        # Using defaultdict to simplify scoring logic
+        scores = defaultdict(lambda: {"item": None, "score": 0.0})
 
+        # Process BM25 results
         for rank, (item, _) in enumerate(bm25_results):
-            scores[item.id] = {
-                "item": item,
-                "score": scores.get(item.id, {"score": 0})["score"] + 1 / (k + rank + 1),
-            }
+            scores[item.id]["item"] = item
+            scores[item.id]["score"] += 1.0 / (k + rank + 1)
 
+        # Process Vector results
         for rank, (item, _) in enumerate(vector_results):
-            scores[item.id] = {
-                "item": item,
-                "score": scores.get(item.id, {"score": 0})["score"] + 1 / (k + rank + 1),
-            }
+            scores[item.id]["item"] = item
+            scores[item.id]["score"] += 1.0 / (k + rank + 1)
 
+        # Sort by score descending
         results = sorted(scores.values(), key=lambda x: x["score"], reverse=True)
 
+        # Normalize scores if requested
         if normalize and results:
-            max_score = 2 / (k + 1)
+            normalization_factor = 2.0 / (k + 1)
             for result in results:
-                result["score"] = result["score"] / max_score
+                result["score"] = result["score"] / normalization_factor
 
         return results
 
     async def search_tips(
-        self, query_text: str, query_embedding: List[float], limit: int = 5
+        self, query_text: str, query_embedding: List[float], limit: int = DEFAULT_TIPS_LIMIT
     ) -> List[Tip]:
         # Hybrid search for tips (simplified for MVP)
         query = select(Tip).order_by(Tip.embedding.cosine_distance(query_embedding)).limit(limit)

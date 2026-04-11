@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from antifraud_rag.core.constants import RRF_K, RRF_NORMALIZATION_FACTOR
 from antifraud_rag.db.models import Case, Tip
 from antifraud_rag.services.retrieval import RetrievalService
 
@@ -125,9 +126,22 @@ class TestRetrievalServiceRRF:
         mock_case.id = "case1"
 
         result = service.rrf_fusion([(mock_case, 1.0)], [])
-        raw_score = 1 / (60 + 0 + 1)
-        max_score = 2 / (60 + 1)
-        expected_score = raw_score / max_score
+        raw_score = 1 / (RRF_K + 0 + 1)
+        expected_score = raw_score / RRF_NORMALIZATION_FACTOR
+        assert result[0]["score"] == pytest.approx(expected_score)
+
+    def test_rrf_fusion_custom_k_uses_matching_normalization(self):
+        """Custom k should affect both raw score and normalization."""
+        mock_db = AsyncMock()
+        service = RetrievalService(mock_db)
+
+        mock_case = MagicMock(spec=Case)
+        mock_case.id = "case1"
+
+        result = service.rrf_fusion([(mock_case, 1.0)], [], k=30)
+        raw_score = 1 / (30 + 0 + 1)
+        expected_score = raw_score / (2 / (30 + 1))
+
         assert result[0]["score"] == pytest.approx(expected_score)
 
     def test_rrf_fusion_results_sorted_by_score(self):

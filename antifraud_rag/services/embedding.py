@@ -4,6 +4,8 @@ from typing import List
 import httpx
 
 from antifraud_rag.core.config import Settings
+from antifraud_rag.core.constants import EMBEDDING_TIMEOUT
+from antifraud_rag.core.exceptions import EmbeddingError
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +23,7 @@ class EmbeddingService:
                     self.url,
                     headers={"Authorization": f"Bearer {self.api_key}"},
                     json={"input": text, "model": self.model},
-                    timeout=10.0,
+                    timeout=EMBEDDING_TIMEOUT,
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -29,4 +31,4 @@ class EmbeddingService:
                 return data["data"][0]["embedding"]
         except Exception as e:
             logger.error(f"Error getting embeddings: {e}")
-            raise RuntimeError(f"Embedding API error: {str(e)}")
+            raise EmbeddingError(f"Embedding API error: {str(e)}")

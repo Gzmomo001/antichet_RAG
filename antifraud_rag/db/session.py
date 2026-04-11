@@ -5,6 +5,7 @@ Database session management for Anti-Fraud RAG system.
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from antifraud_rag.core.config import Settings
+from antifraud_rag.core.exceptions import DatabaseNotInitializedError
 
 # Global engine and session factory (initialized via init_db)
 engine = None
@@ -39,5 +40,5 @@ def get_session() -> AsyncSession:
             ...
     """
     if async_session_factory is None:
-        raise RuntimeError("Database not initialized. Call init_engine() first.")
+        raise DatabaseNotInitializedError("Database not initialized. Call init_engine() first.")
     return async_session_factory()
