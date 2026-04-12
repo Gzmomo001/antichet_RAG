@@ -2,7 +2,11 @@
 Unit tests for antifraud_rag/core/config.py - Settings configuration.
 """
 
+import pytest
+from pydantic import ValidationError
+
 from antifraud_rag.core.config import Settings
+from antifraud_rag.core.constants import EMBEDDING_DIMENSION as DEFAULT_EMBEDDING_DIMENSION
 
 
 class TestSettings:
@@ -18,7 +22,7 @@ class TestSettings:
         assert settings.EMBEDDING_MODEL_URL == "https://api.openai.com/v1/embeddings"
         assert settings.EMBEDDING_MODEL_API_KEY == "test-key-123"
         assert settings.EMBEDDING_MODEL_NAME == "text-embedding-ada-002"
-        assert settings.EMBEDDING_DIMENSION == 1536
+        assert settings.EMBEDDING_DIMENSION == DEFAULT_EMBEDDING_DIMENSION
 
     def test_settings_with_custom_values(self):
         """Test Settings accepts custom values for all fields."""
@@ -44,7 +48,7 @@ class TestSettings:
         )
 
         assert settings.EMBEDDING_MODEL_NAME == "text-embedding-ada-002"
-        assert settings.EMBEDDING_DIMENSION == 1536
+        assert settings.EMBEDDING_DIMENSION == DEFAULT_EMBEDDING_DIMENSION
         assert settings.HIGH_RISK_THRESHOLD == 0.85
         assert "postgresql" in settings.DATABASE_URL
 
@@ -81,3 +85,12 @@ class TestSettings:
             EMBEDDING_DIMENSION=1,
         )
         assert settings.EMBEDDING_DIMENSION == 1
+
+    def test_settings_dimension_rejects_non_positive_values(self):
+        """Test EMBEDDING_DIMENSION rejects zero or negative values."""
+        with pytest.raises(ValidationError):
+            Settings(
+                EMBEDDING_MODEL_URL="https://api.test.com",
+                EMBEDDING_MODEL_API_KEY="test-key",
+                EMBEDDING_DIMENSION=0,
+            )

@@ -42,8 +42,8 @@ def settings():
 
 
 @pytest.fixture
-def fake_embedding():
-    return [0.1] * 1536
+def fake_embedding(settings):
+    return [0.1] * settings.EMBEDDING_DIMENSION
 
 
 @pytest.fixture
@@ -216,7 +216,8 @@ class TestAnalyzeEndToEnd:
             assert response.result_type == ResultType.RAG_PROMPT.value
             assert response.data.risk_level == RiskLevel.LOW.value
             assert response.data.rrf_score == 0.0
-            assert "分析用户请求" in response.data.prompt
+            assert "你是一个专业的反诈骗助手" in response.data.prompt
+            assert tip.title in response.data.prompt
             assert response.data.context.relevant_cases == []
         finally:
             cleanup()

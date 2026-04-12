@@ -196,7 +196,7 @@ class TestRetrievalServiceVector:
         mock_result.all.return_value = [(mock_case, 0.95)]
         mock_db.execute.return_value = mock_result
 
-        query_embedding = [0.1] * 1536
+        query_embedding = [0.1, 0.2, 0.3]
         results = await service.search_cases_vector(query_embedding)
 
         assert len(results) == 1
@@ -213,7 +213,7 @@ class TestRetrievalServiceVector:
         mock_result.all.return_value = []
         mock_db.execute.return_value = mock_result
 
-        results = await service.search_cases_vector([0.1] * 1536)
+        results = await service.search_cases_vector([0.1, 0.2, 0.3])
         assert results == []
 
 
@@ -226,20 +226,28 @@ class TestRetrievalServiceBM25:
         mock_db = AsyncMock()
         service = RetrievalService(mock_db)
 
-        mock_case = MagicMock(spec=Case)
-        mock_case.id = "bm25_test_case"
+        mock_case1 = MagicMock(spec=Case)
+        mock_case1.id = "bm25_test_case_1"
+        mock_case2 = MagicMock(spec=Case)
+        mock_case2.id = "bm25_test_case_2"
 
         mock_result1 = MagicMock()
-        mock_result1.all.return_value = [("bm25_test_case", 0.8)]
+        mock_result1.all.return_value = [
+            ("bm25_test_case_1", 0.8),
+            ("bm25_test_case_2", 0.6),
+        ]
         mock_result2 = MagicMock()
-        mock_result2.scalars.return_value.all.return_value = [mock_case]
+        mock_result2.scalars.return_value.all.return_value = [mock_case2, mock_case1]
 
         mock_db.execute.side_effect = [mock_result1, mock_result2]
 
         results = await service.search_cases_bm25("test query")
 
-        assert len(results) == 1
-        assert results[0][0].id == "bm25_test_case"
+        assert len(results) == 2
+        assert [(case.id, score) for case, score in results] == [
+            ("bm25_test_case_1", 0.8),
+            ("bm25_test_case_2", 0.6),
+        ]
 
     @pytest.mark.asyncio
     async def test_search_cases_bm25_empty_results(self):
@@ -259,8 +267,8 @@ class TestRetrievalServiceTips:
     """Tests for tips search functionality."""
 
     @pytest.mark.asyncio
-    async def test_search_tips_returns_tips(self):
-        """Test tips search returns list of tips."""
+    async def test_search_tips_bm25_preserves_ranked_order(self):
+        """Test BM25 tips search preserves ranked order after ORM hydration."""
         mock_db = AsyncMock()
         service = RetrievalService(mock_db)
 
@@ -269,14 +277,46 @@ class TestRetrievalServiceTips:
         mock_tip2 = MagicMock(spec=Tip)
         mock_tip2.id = "tip2"
 
-        mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = [mock_tip1, mock_tip2]
-        mock_db.execute.return_value = mock_result
+        mock_result1 = MagicMock()
+        mock_result1.all.return_value = [("tip1", 0.8), ("tip2", 0.6)]
+        mock_result2 = MagicMock()
+        mock_result2.scalars.return_value.all.return_value = [mock_tip2, mock_tip1]
 
-        results = await service.search_tips("test query", [0.1] * 1536)
+        mock_db.execute.side_effect = [mock_result1, mock_result2]
 
-        assert len(results) == 2
-        mock_db.execute.assert_called_once()
+        results = await service.search_tips_bm25("test query")
+
+        assert [(tip.id, score) for tip, score in results] == [
+            ("tip1", 0.8),
+            ("tip2", 0.6),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_search_tips_returns_tips(self):
+        """Test tips search returns RRF-ranked tips."""
+        mock_db = AsyncMock()
+        service = RetrievalService(mock_db)
+
+        mock_tip1 = MagicMock(spec=Tip)
+        mock_tip1.id = "tip1"
+        mock_tip2 = MagicMock(spec=Tip)
+        mock_tip2.id = "tip2"
+
+        service.search_tips_bm25 = AsyncMock(return_value=[(mock_tip1, 0.8)])
+        service.search_tips_vector = AsyncMock(return_value=[(mock_tip2, 0.9), (mock_tip1, 0.7)])
+        service.rrf_fusion = MagicMock(
+            return_value=[
+                {"item": mock_tip1, "score": 1.0},
+                {"item": mock_tip2, "score": 0.8},
+            ]
+        )
+
+        query_embedding = [0.1, 0.2, 0.3]
+        results = await service.search_tips("test query", query_embedding)
+
+        assert [tip.id for tip in results] == ["tip1", "tip2"]
+        service.search_tips_bm25.assert_called_once_with("test query", 5)
+        service.search_tips_vector.assert_called_once_with(query_embedding, 5)
 
     @pytest.mark.asyncio
     async def test_search_tips_respects_limit(self):
@@ -284,10 +324,29 @@ class TestRetrievalServiceTips:
         mock_db = AsyncMock()
         service = RetrievalService(mock_db)
 
-        mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = []
-        mock_db.execute.return_value = mock_result
+        mock_tip1 = MagicMock(spec=Tip)
+        mock_tip1.id = "tip1"
+        mock_tip2 = MagicMock(spec=Tip)
+        mock_tip2.id = "tip2"
+        mock_tip3 = MagicMock(spec=Tip)
+        mock_tip3.id = "tip3"
+        mock_tip4 = MagicMock(spec=Tip)
+        mock_tip4.id = "tip4"
 
-        await service.search_tips("test", [0.1] * 1536, limit=3)
+        service.search_tips_bm25 = AsyncMock(return_value=[])
+        service.search_tips_vector = AsyncMock(return_value=[])
+        service.rrf_fusion = MagicMock(
+            return_value=[
+                {"item": mock_tip1, "score": 1.0},
+                {"item": mock_tip2, "score": 0.9},
+                {"item": mock_tip3, "score": 0.8},
+                {"item": mock_tip4, "score": 0.7},
+            ]
+        )
 
-        mock_db.execute.assert_called_once()
+        query_embedding = [0.1, 0.2, 0.3]
+        results = await service.search_tips("test", query_embedding, limit=3)
+
+        assert [tip.id for tip in results] == ["tip1", "tip2", "tip3"]
+        service.search_tips_bm25.assert_called_once_with("test", 3)
+        service.search_tips_vector.assert_called_once_with(query_embedding, 3)

@@ -8,8 +8,9 @@ from uuid import UUID
 import pytest
 
 from antifraud_rag import FraudAnalyzer, Settings
+from antifraud_rag.core.constants import EMBEDDING_DIMENSION as DEFAULT_EMBEDDING_DIMENSION
 from antifraud_rag.core.exceptions import EmbeddingError
-from antifraud_rag.db.models import Case, Tip
+from antifraud_rag.db.models import Case, Tip, get_embedding_dimension
 
 
 @pytest.fixture
@@ -18,6 +19,7 @@ def mock_settings():
         EMBEDDING_MODEL_URL="https://api.test.com/embeddings",
         EMBEDDING_MODEL_API_KEY="test-key",
         DATABASE_URL="sqlite+aiosqlite:///:memory:",
+        EMBEDDING_DIMENSION=DEFAULT_EMBEDDING_DIMENSION,
         HIGH_RISK_THRESHOLD=0.85,
     )
 
@@ -30,7 +32,7 @@ def mock_db():
 @pytest.fixture
 def mock_embedding_service(mock_settings):
     service = MagicMock()
-    service.get_embeddings = AsyncMock(return_value=[0.1] * 1536)
+    service.get_embeddings = AsyncMock(return_value=[0.1] * mock_settings.EMBEDDING_DIMENSION)
     return service
 
 
@@ -65,6 +67,34 @@ class TestFraudAnalyzerClass:
         """Test FraudAnalyzer initializes with custom settings."""
         analyzer = FraudAnalyzer(mock_db, settings=mock_settings)
         assert analyzer.settings == mock_settings
+
+    def test_init_configures_embedding_dimension(self, mock_db):
+        settings = Settings(
+            EMBEDDING_MODEL_URL="https://api.test.com/embeddings",
+            EMBEDDING_MODEL_API_KEY="test-key",
+            EMBEDDING_DIMENSION=2048,
+        )
+
+        analyzer = FraudAnalyzer(mock_db, settings=settings)
+
+        assert get_embedding_dimension(analyzer.case_model) == 2048
+
+    def test_init_uses_isolated_models_per_dimension(self, mock_db, mock_settings):
+        default_analyzer = FraudAnalyzer(mock_db, settings=mock_settings)
+        custom_settings = Settings(
+            EMBEDDING_MODEL_URL="https://api.test.com/embeddings",
+            EMBEDDING_MODEL_API_KEY="test-key",
+            EMBEDDING_DIMENSION=2048,
+        )
+
+        custom_analyzer = FraudAnalyzer(mock_db, settings=custom_settings)
+
+        assert (
+            get_embedding_dimension(default_analyzer.case_model)
+            == mock_settings.EMBEDDING_DIMENSION
+        )
+        assert get_embedding_dimension(custom_analyzer.case_model) == 2048
+        assert default_analyzer.case_model is not custom_analyzer.case_model
 
     def test_init_with_custom_embedding_service(
         self, mock_db, mock_settings, mock_embedding_service
@@ -119,6 +149,9 @@ class TestFraudAnalyzerClass:
 
             assert response.result_type == "RAG_Prompt"
             assert response.data.risk_level == "MEDIUM"
+            assert "你是一个专业的反诈骗助手" in response.data.prompt
+            assert mock_case.description in response.data.prompt
+            assert mock_tip.title in response.data.prompt
 
     @pytest.mark.asyncio
     async def test_analyze_returns_rag_prompt(
@@ -147,19 +180,16 @@ class TestFraudAnalyzerClass:
             mock_db, settings=mock_settings, embedding_service=mock_embedding_service
         )
 
-        mock_case = MagicMock(spec=Case)
-        mock_case.id = UUID("12345678-1234-5678-1234-567812345678")
-
         mock_db.add = MagicMock()
         mock_db.commit = AsyncMock()
-        mock_db.refresh = AsyncMock(return_value=mock_case)
+        mock_db.refresh = AsyncMock()
 
-        with patch("antifraud_rag.analyzer.Case") as mock_case_class:
-            mock_case_class.return_value = mock_case
-            await analyzer.add_case(description="test description", fraud_type="phishing")
+        result = await analyzer.add_case(description="test description", fraud_type="phishing")
 
-            mock_db.add.assert_called_once()
-            mock_db.commit.assert_called_once()
+        mock_db.add.assert_called_once_with(result)
+        mock_db.commit.assert_called_once()
+        assert result.description == "test description"
+        assert result.fraud_type == "phishing"
 
     @pytest.mark.asyncio
     async def test_add_tip_success(self, mock_db, mock_settings, mock_embedding_service):
@@ -168,19 +198,16 @@ class TestFraudAnalyzerClass:
             mock_db, settings=mock_settings, embedding_service=mock_embedding_service
         )
 
-        mock_tip = MagicMock(spec=Tip)
-        mock_tip.id = UUID("87654321-4321-8765-4321-876543218765")
-
         mock_db.add = MagicMock()
         mock_db.commit = AsyncMock()
-        mock_db.refresh = AsyncMock(return_value=mock_tip)
+        mock_db.refresh = AsyncMock()
 
-        with patch("antifraud_rag.analyzer.Tip") as mock_tip_class:
-            mock_tip_class.return_value = mock_tip
-            await analyzer.add_tip(title="Test Tip", content="Test content")
+        result = await analyzer.add_tip(title="Test Tip", content="Test content")
 
-            mock_db.add.assert_called_once()
-            mock_db.commit.assert_called_once()
+        mock_db.add.assert_called_once_with(result)
+        mock_db.commit.assert_called_once()
+        assert result.title == "Test Tip"
+        assert result.content == "Test content"
 
     @pytest.mark.asyncio
     async def test_search_similar_cases(
@@ -236,6 +263,9 @@ class TestFraudAnalyzerClass:
             assert response.result_type == "RAG_Prompt"
             assert response.data.risk_level == "LOW"
             assert response.data.rrf_score == 0.0
+            assert "你是一个专业的反诈骗助手" in response.data.prompt
+            assert mock_tip.title in response.data.prompt
+            assert response.data.context.relevant_cases == []
 
     @pytest.mark.asyncio
     async def test_analyze_returns_medium_when_score_between_thresholds(
@@ -255,6 +285,8 @@ class TestFraudAnalyzerClass:
 
             assert response.result_type == "RAG_Prompt"
             assert response.data.risk_level == "MEDIUM"
+            assert mock_case.description in response.data.prompt
+            assert mock_tip.title in response.data.prompt
 
     @pytest.mark.asyncio
     async def test_analyze_returns_low_when_score_below_half(
@@ -296,29 +328,22 @@ class TestFraudAnalyzerClass:
             mock_db, settings=mock_settings, embedding_service=mock_embedding_service
         )
 
-        mock_case = MagicMock(spec=Case)
-        mock_case.id = UUID("12345678-1234-5678-1234-567812345678")
         mock_db.add = MagicMock()
         mock_db.commit = AsyncMock()
-        mock_db.refresh = AsyncMock(return_value=mock_case)
+        mock_db.refresh = AsyncMock()
 
-        with patch("antifraud_rag.analyzer.Case") as mock_case_class:
-            mock_case_class.return_value = mock_case
-            result = await analyzer.add_case(
-                description="test",
-                fraud_type="phishing",
-                amount=9999.99,
-                keywords=["urgent", "transfer"],
-            )
+        result = await analyzer.add_case(
+            description="test",
+            fraud_type="phishing",
+            amount=9999.99,
+            keywords=["urgent", "transfer"],
+        )
 
-            mock_case_class.assert_called_once_with(
-                description="test",
-                fraud_type="phishing",
-                amount=9999.99,
-                keywords=["urgent", "transfer"],
-                embedding=[0.1] * 1536,
-            )
-            assert result == mock_case
+        assert result.description == "test"
+        assert result.fraud_type == "phishing"
+        assert result.amount == 9999.99
+        assert result.keywords == ["urgent", "transfer"]
+        assert list(result.embedding) == [0.1] * mock_settings.EMBEDDING_DIMENSION
 
     @pytest.mark.asyncio
     async def test_add_tip_uses_title_and_content_for_embedding(
@@ -328,17 +353,14 @@ class TestFraudAnalyzerClass:
             mock_db, settings=mock_settings, embedding_service=mock_embedding_service
         )
 
-        mock_tip = MagicMock(spec=Tip)
-        mock_tip.id = UUID("87654321-4321-8765-4321-876543218765")
         mock_db.add = MagicMock()
         mock_db.commit = AsyncMock()
-        mock_db.refresh = AsyncMock(return_value=mock_tip)
+        mock_db.refresh = AsyncMock()
 
-        with patch("antifraud_rag.analyzer.Tip") as mock_tip_class:
-            mock_tip_class.return_value = mock_tip
-            await analyzer.add_tip(title="Title", content="Content", category="general")
+        result = await analyzer.add_tip(title="Title", content="Content", category="general")
 
-            mock_embedding_service.get_embeddings.assert_called_once_with("Title Content")
+        mock_embedding_service.get_embeddings.assert_called_once_with("Title Content")
+        assert result.category == "general"
 
     @pytest.mark.asyncio
     async def test_hybrid_search_respects_limit(
@@ -392,7 +414,9 @@ class TestFraudAnalyzerIntegration:
 
         with patch("antifraud_rag.analyzer.EmbeddingService") as mock_embed_class:
             mock_embed = MagicMock()
-            mock_embed.get_embeddings = AsyncMock(return_value=[0.1] * 1536)
+            mock_embed.get_embeddings = AsyncMock(
+                return_value=[0.1] * mock_settings.EMBEDDING_DIMENSION
+            )
             mock_embed_class.return_value = mock_embed
 
             with patch("antifraud_rag.analyzer.RetrievalService") as mock_retrieval_class:

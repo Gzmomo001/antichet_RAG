@@ -10,7 +10,7 @@ from antifraud_rag.core.constants import (
 )
 from antifraud_rag.core.enums import ResultType, RiskLevel
 from antifraud_rag.core.exceptions import EmbeddingError
-from antifraud_rag.db.models import Case, Tip
+from antifraud_rag.db.models import configure_embedding_dimension
 from antifraud_rag.schemas import (
     AnalysisResponse,
     DirectHitData,
@@ -57,8 +57,15 @@ class FraudAnalyzer:
     ):
         self.db = db
         self.settings = settings
+        model_registry = configure_embedding_dimension(self.settings.EMBEDDING_DIMENSION)
+        self.case_model = model_registry.case_model
+        self.tip_model = model_registry.tip_model
         self.embedding_service = embedding_service or EmbeddingService(settings=self.settings)
-        self.retrieval_service = RetrievalService(db)
+        self.retrieval_service = RetrievalService(
+            db,
+            case_model=self.case_model,
+            tip_model=self.tip_model,
+        )
 
     async def analyze(self, text: str) -> AnalysisResponse:
         """
@@ -93,7 +100,7 @@ class FraudAnalyzer:
         fraud_type: Optional[str] = None,
         amount: Optional[float] = None,
         keywords: Optional[List[str]] = None,
-    ) -> Case:
+    ) -> Any:
         """
         添加案例到知识库。
 
@@ -104,11 +111,11 @@ class FraudAnalyzer:
             keywords: 关键词列表
 
         Returns:
-            Case: 创建的案例对象
+            创建的案例对象
         """
         embedding = await self.embedding_service.get_embeddings(description)
 
-        case = Case(
+        case = self.case_model(
             description=description,
             fraud_type=fraud_type,
             amount=amount,
@@ -128,7 +135,7 @@ class FraudAnalyzer:
         content: str,
         category: Optional[str] = None,
         keywords: Optional[List[str]] = None,
-    ) -> Tip:
+    ) -> Any:
         """
         添加反诈知识到知识库。
 
@@ -139,11 +146,11 @@ class FraudAnalyzer:
             keywords: 关键词列表
 
         Returns:
-            Tip: 创建的知识对象
+            创建的知识对象
         """
         embedding = await self.embedding_service.get_embeddings(f"{title} {content}")
 
-        tip = Tip(
+        tip = self.tip_model(
             title=title,
             content=content,
             category=category,
@@ -230,17 +237,12 @@ class FraudAnalyzer:
     async def _build_low_risk_response(self, text: str, embedding: List[float]) -> AnalysisResponse:
         """构建低风险响应。"""
         tips = await self.retrieval_service.search_tips(text, embedding)
-        return AnalysisResponse(
-            result_type=ResultType.RAG_PROMPT.value,
-            data=RAGPromptData(
-                risk_level=RiskLevel.LOW.value,
-                rrf_score=0.0,
-                prompt=f"分析用户请求: {text}",
-                context=RAGPromptContext(
-                    relevant_cases=[],
-                    anti_fraud_tips=build_tips_data(tips),
-                ),
-            ),
+        return self._build_rag_prompt_response(
+            text=text,
+            relevant_cases_data=[],
+            tips_data=build_tips_data(tips),
+            risk_level=RiskLevel.LOW.value,
+            top_score=0.0,
         )
 
     def _build_high_risk_response(self, fused_results: List[Dict[str, Any]]) -> AnalysisResponse:
@@ -269,6 +271,23 @@ class FraudAnalyzer:
             RiskLevel.MEDIUM.value if top_score > MEDIUM_RISK_THRESHOLD else RiskLevel.LOW.value
         )
 
+        return self._build_rag_prompt_response(
+            text=text,
+            relevant_cases_data=relevant_cases_data,
+            tips_data=tips_data,
+            risk_level=risk_level,
+            top_score=top_score,
+        )
+
+    def _build_rag_prompt_response(
+        self,
+        text: str,
+        relevant_cases_data: List[Dict[str, Any]],
+        tips_data: List[Dict[str, Any]],
+        risk_level: str,
+        top_score: float,
+    ) -> AnalysisResponse:
+        """构建统一的 RAG prompt 响应。"""
         return AnalysisResponse(
             result_type=ResultType.RAG_PROMPT.value,
             data=RAGPromptData(

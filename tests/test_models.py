@@ -2,7 +2,14 @@
 Unit tests for antifraud_rag/db/models.py - SQLAlchemy models.
 """
 
-from antifraud_rag.db.models import Base, Case, Tip
+from antifraud_rag.core.constants import EMBEDDING_DIMENSION as DEFAULT_EMBEDDING_DIMENSION
+from antifraud_rag.db.models import (
+    Base,
+    Case,
+    Tip,
+    configure_embedding_dimension,
+    get_embedding_dimension,
+)
 
 
 class TestCaseModel:
@@ -49,6 +56,9 @@ class TestCaseModel:
     def test_case_inherits_from_base(self):
         assert issubclass(Case, Base)
 
+    def test_case_embedding_uses_default_dimension(self):
+        assert Case.__table__.columns["embedding"].type.dim == DEFAULT_EMBEDDING_DIMENSION
+
 
 class TestTipModel:
     def test_tip_tablename(self):
@@ -92,3 +102,11 @@ class TestTipModel:
 
     def test_tip_inherits_from_base(self):
         assert issubclass(Tip, Base)
+
+    def test_tip_embedding_dimension_can_be_reconfigured(self):
+        model_registry = configure_embedding_dimension(2048)
+
+        assert get_embedding_dimension(model_registry.case_model) == 2048
+        assert get_embedding_dimension(model_registry.tip_model) == 2048
+        assert get_embedding_dimension(Case) == DEFAULT_EMBEDDING_DIMENSION
+        assert get_embedding_dimension(Tip) == DEFAULT_EMBEDDING_DIMENSION

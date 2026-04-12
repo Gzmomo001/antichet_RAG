@@ -15,6 +15,7 @@ class EmbeddingService:
         self.url = settings.EMBEDDING_MODEL_URL
         self.api_key = settings.EMBEDDING_MODEL_API_KEY
         self.model = settings.EMBEDDING_MODEL_NAME
+        self.dimension = settings.EMBEDDING_DIMENSION
 
     async def get_embeddings(self, text: str) -> List[float]:
         try:
@@ -28,7 +29,16 @@ class EmbeddingService:
                 response.raise_for_status()
                 data = response.json()
                 # Assuming OpenAI compatible response format
-                return data["data"][0]["embedding"]
+                embedding = data["data"][0]["embedding"]
+
+                if len(embedding) != self.dimension:
+                    raise EmbeddingError(
+                        f"Embedding dimension mismatch: expected {self.dimension}, got {len(embedding)}"
+                    )
+
+                return embedding
         except Exception as e:
             logger.error(f"Error getting embeddings: {e}")
+            if isinstance(e, EmbeddingError):
+                raise
             raise EmbeddingError(f"Embedding API error: {str(e)}")

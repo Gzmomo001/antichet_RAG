@@ -26,6 +26,7 @@ class TestEmbeddingService:
     async def test_get_embeddings_success(self, mock_settings):
         """Test successful embedding retrieval."""
         service = EmbeddingService(settings=mock_settings)
+        embedding = [0.1] * mock_settings.EMBEDDING_DIMENSION
 
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client_instance = AsyncMock()
@@ -34,13 +35,13 @@ class TestEmbeddingService:
             mock_client_class.return_value = mock_client_instance
 
             mock_response = MagicMock(spec=Response)
-            mock_response.json.return_value = {"data": [{"embedding": [0.1, 0.2, 0.3], "index": 0}]}
+            mock_response.json.return_value = {"data": [{"embedding": embedding, "index": 0}]}
             mock_response.raise_for_status = MagicMock()
             mock_client_instance.post.return_value = mock_response
 
             result = await service.get_embeddings("test text")
 
-            assert result == [0.1, 0.2, 0.3]
+            assert result == embedding
             mock_client_instance.post.assert_called_once()
 
     @pytest.mark.asyncio
@@ -55,7 +56,9 @@ class TestEmbeddingService:
             mock_client_class.return_value = mock_client_instance
 
             mock_response = MagicMock(spec=Response)
-            mock_response.json.return_value = {"data": [{"embedding": [0.1] * 1536, "index": 0}]}
+            mock_response.json.return_value = {
+                "data": [{"embedding": [0.1] * mock_settings.EMBEDDING_DIMENSION, "index": 0}]
+            }
             mock_response.raise_for_status = MagicMock()
             mock_client_instance.post.return_value = mock_response
 
@@ -77,7 +80,9 @@ class TestEmbeddingService:
             mock_client_class.return_value = mock_client_instance
 
             mock_response = MagicMock(spec=Response)
-            mock_response.json.return_value = {"data": [{"embedding": [0.1] * 1536, "index": 0}]}
+            mock_response.json.return_value = {
+                "data": [{"embedding": [0.1] * mock_settings.EMBEDDING_DIMENSION, "index": 0}]
+            }
             mock_response.raise_for_status = MagicMock()
             mock_client_instance.post.return_value = mock_response
 
@@ -98,7 +103,9 @@ class TestEmbeddingService:
             mock_client_class.return_value = mock_client_instance
 
             mock_response = MagicMock(spec=Response)
-            mock_response.json.return_value = {"data": [{"embedding": [0.1] * 1536, "index": 0}]}
+            mock_response.json.return_value = {
+                "data": [{"embedding": [0.1] * mock_settings.EMBEDDING_DIMENSION, "index": 0}]
+            }
             mock_response.raise_for_status = MagicMock()
             mock_client_instance.post.return_value = mock_response
 
@@ -119,7 +126,9 @@ class TestEmbeddingService:
             mock_client_class.return_value = mock_client_instance
 
             mock_response = MagicMock(spec=Response)
-            mock_response.json.return_value = {"data": [{"embedding": [0.1] * 1536, "index": 0}]}
+            mock_response.json.return_value = {
+                "data": [{"embedding": [0.1] * mock_settings.EMBEDDING_DIMENSION, "index": 0}]
+            }
             mock_response.raise_for_status = MagicMock()
             mock_client_instance.post.return_value = mock_response
 
@@ -127,6 +136,25 @@ class TestEmbeddingService:
 
             call_kwargs = mock_client_instance.post.call_args[1]
             assert call_kwargs["timeout"] == EMBEDDING_TIMEOUT
+
+    @pytest.mark.asyncio
+    async def test_get_embeddings_raises_on_dimension_mismatch(self, mock_settings):
+        """Test embedding raises when API returns unexpected vector size."""
+        service = EmbeddingService(settings=mock_settings)
+
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client_instance = AsyncMock()
+            mock_client_instance.__aenter__.return_value = mock_client_instance
+            mock_client_instance.__aexit__.return_value = None
+            mock_client_class.return_value = mock_client_instance
+
+            mock_response = MagicMock(spec=Response)
+            mock_response.json.return_value = {"data": [{"embedding": [0.1] * 3, "index": 0}]}
+            mock_response.raise_for_status = MagicMock()
+            mock_client_instance.post.return_value = mock_response
+
+            with pytest.raises(EmbeddingError, match="Embedding dimension mismatch"):
+                await service.get_embeddings("test")
 
     @pytest.mark.asyncio
     async def test_get_embeddings_raises_on_http_error(self, mock_settings):

@@ -13,16 +13,44 @@ from antifraud_rag.db.models import Case, Tip
 
 
 class RetrievalService:
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, case_model: Any = Case, tip_model: Any = Tip):
         self.db = db
+        self.case_model = case_model
+        self.tip_model = tip_model
+
+    async def _hydrate_ranked_results(
+        self,
+        model: Any,
+        rows: List[Tuple[Any, float]],
+    ) -> List[Tuple[Any, float]]:
+        """Load ORM objects for ranked search rows while preserving ranking order."""
+        if not rows:
+            return []
+
+        item_ids = [row[0] for row in rows]
+        scores = {row[0]: row[1] for row in rows}
+
+        items_query = select(model).where(model.id.in_(item_ids))
+        items_result = await self.db.execute(items_query)
+        items = items_result.scalars().all()
+        items_by_id = {item.id: item for item in items}
+
+        return [
+            (items_by_id[item_id], scores[item_id])
+            for item_id in item_ids
+            if item_id in items_by_id
+        ]
 
     async def search_cases_vector(
         self, query_embedding: List[float], limit: int = DEFAULT_SEARCH_LIMIT
     ) -> List[Tuple[Case, float]]:
         # Vector search using pgvector cosine distance
         query = (
-            select(Case, (1 - Case.embedding.cosine_distance(query_embedding)).label("score"))
-            .order_by(Case.embedding.cosine_distance(query_embedding))
+            select(
+                self.case_model,
+                (1 - self.case_model.embedding.cosine_distance(query_embedding)).label("score"),
+            )
+            .order_by(self.case_model.embedding.cosine_distance(query_embedding))
             .limit(limit)
         )
 
@@ -41,19 +69,37 @@ class RetrievalService:
             LIMIT :limit
         """)
         result = await self.db.execute(sql, {"query": query_text, "limit": limit})
-        rows = result.all()
+        return await self._hydrate_ranked_results(self.case_model, result.all())
 
-        if not rows:
-            return []
+    async def search_tips_vector(
+        self, query_embedding: List[float], limit: int = DEFAULT_TIPS_LIMIT
+    ) -> List[Tuple[Tip, float]]:
+        # Vector search using pgvector cosine distance
+        query = (
+            select(
+                self.tip_model,
+                (1 - self.tip_model.embedding.cosine_distance(query_embedding)).label("score"),
+            )
+            .order_by(self.tip_model.embedding.cosine_distance(query_embedding))
+            .limit(limit)
+        )
 
-        case_ids = [row[0] for row in rows]
-        scores = {row[0]: row[1] for row in rows}
+        result = await self.db.execute(query)
+        return result.all()
 
-        cases_query = select(Case).where(Case.id.in_(case_ids))
-        cases_result = await self.db.execute(cases_query)
-        cases = cases_result.scalars().all()
-
-        return [(case, scores[case.id]) for case in cases]
+    async def search_tips_bm25(
+        self, query_text: str, limit: int = DEFAULT_TIPS_LIMIT
+    ) -> List[Tuple[Tip, float]]:
+        # BM25 search using PostgreSQL ts_rank
+        sql = text("""
+            SELECT id, ts_rank(content_tsv, plainto_tsquery('english', :query)) as score
+            FROM tips_table
+            WHERE content_tsv @@ plainto_tsquery('english', :query)
+            ORDER BY score DESC
+            LIMIT :limit
+        """)
+        result = await self.db.execute(sql, {"query": query_text, "limit": limit})
+        return await self._hydrate_ranked_results(self.tip_model, result.all())
 
     def rrf_fusion(
         self,
@@ -92,7 +138,8 @@ class RetrievalService:
     async def search_tips(
         self, query_text: str, query_embedding: List[float], limit: int = DEFAULT_TIPS_LIMIT
     ) -> List[Tip]:
-        # Hybrid search for tips (simplified for MVP)
-        query = select(Tip).order_by(Tip.embedding.cosine_distance(query_embedding)).limit(limit)
-        result = await self.db.execute(query)
-        return result.scalars().all()
+        # Hybrid search for tips using BM25 + vector + RRF fusion
+        bm25_tips = await self.search_tips_bm25(query_text, limit)
+        vector_tips = await self.search_tips_vector(query_embedding, limit)
+        fused_results = self.rrf_fusion(bm25_tips, vector_tips)
+        return [result["item"] for result in fused_results[:limit]]

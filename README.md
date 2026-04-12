@@ -2,6 +2,8 @@
 
 **反欺诈 RAG 系统** - 基于 BM25 + 向量搜索 + RRF 融合的 Python 库
 
+> 这是一个**纯 Python 库**，不包含 FastAPI/HTTP 服务；请通过导入 `AntiFraudRAG` / `FraudAnalyzer` 在代码中使用。
+
 ## 简介
 
 `antifraud-rag` 是一个专注于欺诈信息识别的 RAG（Retrieval-Augmented Generation）Python 库。通过混合检索策略（BM25 精确匹配 + 向量语义搜索 + RRF 融合排序），结合历史案例库和反诈知识库，输出风险评估分析。
@@ -45,19 +47,25 @@ settings = Settings(
     EMBEDDING_MODEL_API_KEY="your-api-key",                              # 必需
     DATABASE_URL="postgresql+asyncpg://user:pass@host:5432/dbname",      # 可选
     EMBEDDING_MODEL_NAME="text-embedding-ada-002",                       # 可选，默认 "text-embedding-ada-002"
-    EMBEDDING_DIMENSION=1536,                                            # 可选，默认 1536
+    EMBEDDING_DIMENSION=1536,                                              # 可选，默认 1536
     HIGH_RISK_THRESHOLD=0.85                                             # 可选，默认 0.85
 )
 ```
+
+`EMBEDDING_DIMENSION` 在**单个库实例 / 单个部署**中应保持固定，并与数据库建表时使用的维度一致；当前库不支持同一套表混用多个向量维度。
 
 ## 快速开始
 
 ### 1. 初始化数据库
 
 ```bash
-docker-compose up -d
-python scripts/init_db.py --db-url postgresql+asyncpg://user:pass@localhost:5432/antifraud
+docker-compose up -d db
+python scripts/init_db.py \
+  --db-url postgresql+asyncpg://user:pass@localhost:5432/antifraud \
+  --embedding-dimension 1536
 ```
+
+`docker-compose.yml` 仅用于启动本地 PostgreSQL/pgvector 开发数据库。
 
 ### 2. 使用 AntiFraudRAG
 
@@ -115,7 +123,7 @@ results = await rag.hybrid_search(
 )
 ```
 
-## API 文档
+## 库接口
 
 ### `AntiFraudRAG` 类
 
@@ -264,13 +272,13 @@ flowchart TD
 - `description`: 案例描述全文
 - `fraud_type`: 诈骗类型
 - `amount`: 涉案金额
-- `embedding`: 1536 维向量
+- `embedding`: 向量列，维度由 `EMBEDDING_DIMENSION` 决定（默认 1536）
 - `content_tsv`: 全文搜索索引
 
 **tips_table** (知识库):
 - `title`: 知识标题
 - `content`: 知识内容
-- `embedding`: 1536 维向量（基于 `title + content`）
+- `embedding`: 向量列，维度由 `EMBEDDING_DIMENSION` 决定（默认 1536，基于 `title + content`）
 - `content_tsv`: 全文搜索索引
 
 ### 关键实现
@@ -317,7 +325,6 @@ antifraud_rag/
 - `httpx==0.27.0`
 
 可选依赖:
-- FastAPI: `pip install antifraud-rag[fastapi]`
 - 开发工具: `pip install antifraud-rag[dev]`
 
 ## 许可证
