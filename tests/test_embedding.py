@@ -9,6 +9,7 @@ from httpx import Response
 
 from antifraud_rag.core.constants import EMBEDDING_TIMEOUT
 from antifraud_rag.core.exceptions import EmbeddingError
+from antifraud_rag.services.cache import EmbeddingCache
 from antifraud_rag.services.embedding import EmbeddingService
 
 
@@ -193,3 +194,102 @@ class TestEmbeddingService:
                 await service.get_embeddings("test")
 
             assert "Embedding API error" in str(exc_info.value)
+
+
+class TestEmbeddingServiceWithCache:
+    """Tests for EmbeddingService cache integration."""
+
+    def _make_mock_client(self, embedding: list):
+        mock_client_instance = AsyncMock()
+        mock_client_instance.__aenter__.return_value = mock_client_instance
+        mock_client_instance.__aexit__.return_value = None
+        mock_response = MagicMock(spec=Response)
+        mock_response.json.return_value = {"data": [{"embedding": embedding, "index": 0}]}
+        mock_response.raise_for_status = MagicMock()
+        mock_client_instance.post.return_value = mock_response
+        return mock_client_instance
+
+    @pytest.mark.asyncio
+    async def test_cache_miss_calls_api_and_stores_result(self, mock_settings):
+        """On first call the API is invoked and the result is cached."""
+        cache = EmbeddingCache(max_size=10, ttl_seconds=0)
+        service = EmbeddingService(settings=mock_settings, cache=cache)
+        embedding = [0.1] * mock_settings.EMBEDDING_DIMENSION
+
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client_class.return_value = self._make_mock_client(embedding)
+            result = await service.get_embeddings("fraud text")
+
+        assert result == embedding
+        assert cache.stats.misses == 1
+        assert cache.stats.hits == 0
+        assert cache.stats.size == 1
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_skips_api_call(self, mock_settings):
+        """Second call with identical text must not hit the API."""
+        cache = EmbeddingCache(max_size=10, ttl_seconds=0)
+        service = EmbeddingService(settings=mock_settings, cache=cache)
+        embedding = [0.2] * mock_settings.EMBEDDING_DIMENSION
+
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client_class.return_value = self._make_mock_client(embedding)
+            first = await service.get_embeddings("fraud text")
+
+        with patch("httpx.AsyncClient") as mock_client_class_2:
+            second = await service.get_embeddings("fraud text")
+            mock_client_class_2.assert_not_called()
+
+        assert first == second
+        assert cache.stats.hits == 1
+        assert cache.stats.misses == 1
+
+    @pytest.mark.asyncio
+    async def test_different_texts_have_separate_cache_entries(self, mock_settings):
+        """Distinct texts must produce independent cache entries."""
+        cache = EmbeddingCache(max_size=10, ttl_seconds=0)
+        service = EmbeddingService(settings=mock_settings, cache=cache)
+        vec_a = [0.1] * mock_settings.EMBEDDING_DIMENSION
+        vec_b = [0.9] * mock_settings.EMBEDDING_DIMENSION
+
+        with patch("httpx.AsyncClient") as mock_a:
+            mock_a.return_value = self._make_mock_client(vec_a)
+            result_a = await service.get_embeddings("text-a")
+
+        with patch("httpx.AsyncClient") as mock_b:
+            mock_b.return_value = self._make_mock_client(vec_b)
+            result_b = await service.get_embeddings("text-b")
+
+        assert result_a == vec_a
+        assert result_b == vec_b
+        assert cache.stats.size == 2
+
+    @pytest.mark.asyncio
+    async def test_no_cache_always_calls_api(self, mock_settings):
+        """When cache=None the API is called every time."""
+        service = EmbeddingService(settings=mock_settings, cache=None)
+        embedding = [0.5] * mock_settings.EMBEDDING_DIMENSION
+
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client_class.return_value = self._make_mock_client(embedding)
+            await service.get_embeddings("text")
+            await service.get_embeddings("text")
+            assert mock_client_class.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_api_error_does_not_cache_result(self, mock_settings):
+        """Failed API calls must not pollute the cache."""
+        cache = EmbeddingCache(max_size=10, ttl_seconds=0)
+        service = EmbeddingService(settings=mock_settings, cache=cache)
+
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client_instance = AsyncMock()
+            mock_client_instance.__aenter__.return_value = mock_client_instance
+            mock_client_instance.__aexit__.return_value = None
+            mock_client_instance.post.side_effect = Exception("API down")
+            mock_client_class.return_value = mock_client_instance
+
+            with pytest.raises(EmbeddingError):
+                await service.get_embeddings("text")
+
+        assert cache.stats.size == 0

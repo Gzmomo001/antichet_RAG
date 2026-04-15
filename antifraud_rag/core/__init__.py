@@ -2,6 +2,8 @@ from antifraud_rag.core.config import Settings
 from antifraud_rag.core.constants import (
     DEFAULT_SEARCH_LIMIT,
     DEFAULT_TIPS_LIMIT,
+    EMBEDDING_CACHE_MAX_SIZE,
+    EMBEDDING_CACHE_TTL_SECONDS,
     EMBEDDING_DIMENSION,
     EMBEDDING_TIMEOUT,
     HIGH_RISK_THRESHOLD,
@@ -35,4 +37,6 @@ __all__ = [
     "HIGH_RISK_THRESHOLD",
     "MEDIUM_RISK_THRESHOLD",
     "MIN_MATCH_SCORE",
+    "EMBEDDING_CACHE_MAX_SIZE",
+    "EMBEDDING_CACHE_TTL_SECONDS",
 ]

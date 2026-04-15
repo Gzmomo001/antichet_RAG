@@ -17,6 +17,7 @@ from antifraud_rag.schemas import (
     RAGPromptContext,
     RAGPromptData,
 )
+from antifraud_rag.services.cache import EmbeddingCache
 from antifraud_rag.services.embedding import EmbeddingService
 from antifraud_rag.services.prompts import (
     build_matched_cases,
@@ -36,17 +37,24 @@ class FraudAnalyzer:
     使用方法:
         from antifraud_rag import FraudAnalyzer
 
-        # 初始化
+        # 初始化（缓存默认开启，参数来自 settings）
         analyzer = FraudAnalyzer(db_session, settings=my_settings)
+
+        # 关闭缓存
+        analyzer = FraudAnalyzer(db_session, settings=my_settings,
+                                  embedding_cache=None)
+
+        # 自定义缓存参数
+        from antifraud_rag import EmbeddingCache
+        cache = EmbeddingCache(max_size=500, ttl_seconds=3600)
+        analyzer = FraudAnalyzer(db_session, settings=my_settings,
+                                  embedding_cache=cache)
 
         # 分析文本风险
         result = await analyzer.analyze("这是一个可疑的电话...")
 
-        # 添加案例到知识库
-        await analyzer.add_case(description="...", fraud_type="电信诈骗")
-
-        # 添加反诈知识
-        await analyzer.add_tip(title="...", content="...")
+        # 查看缓存命中统计
+        print(analyzer.embedding_service.cache_stats)
     """
 
     def __init__(
@@ -54,13 +62,49 @@ class FraudAnalyzer:
         db: AsyncSession,
         settings: Settings,
         embedding_service: Optional[EmbeddingService] = None,
+        embedding_cache: Optional[EmbeddingCache] = None,
     ):
+        """
+        Args:
+            db: Async SQLAlchemy session.
+            settings: Application settings.
+            embedding_service: Pre-built :class:`EmbeddingService` to use.
+                When supplied, *embedding_cache* is ignored (the provided
+                service is used as-is with whatever cache it was configured
+                with).
+            embedding_cache: Cache to attach to the default
+                :class:`EmbeddingService`.  Pass an :class:`EmbeddingCache`
+                instance to use custom parameters, or ``None`` to disable
+                caching.  Ignored when *embedding_service* is given.
+                Defaults to a new :class:`EmbeddingCache` built from
+                ``settings.EMBEDDING_CACHE_MAX_SIZE`` /
+                ``settings.EMBEDDING_CACHE_TTL_SECONDS``.
+        """
         self.db = db
         self.settings = settings
         model_registry = configure_embedding_dimension(self.settings.EMBEDDING_DIMENSION)
         self.case_model = model_registry.case_model
         self.tip_model = model_registry.tip_model
-        self.embedding_service = embedding_service or EmbeddingService(settings=self.settings)
+
+        if embedding_service is not None:
+            if embedding_cache is not None:
+                logger.warning(
+                    "Both embedding_service and embedding_cache were provided. "
+                    "embedding_cache will be ignored because the supplied "
+                    "embedding_service already has its own cache configuration."
+                )
+            self.embedding_service = embedding_service
+        else:
+            cache = (
+                embedding_cache
+                if embedding_cache is not None
+                else EmbeddingCache(
+                    max_size=self.settings.EMBEDDING_CACHE_MAX_SIZE,
+                    ttl_seconds=self.settings.EMBEDDING_CACHE_TTL_SECONDS,
+                )
+            )
+            self.embedding_service = EmbeddingService(settings=self.settings, cache=cache)
+
         self.retrieval_service = RetrievalService(
             db,
             case_model=self.case_model,
