@@ -39,6 +39,7 @@ from antifraud_rag.schemas import (
     RAGPromptContext,
     RAGPromptData,
 )
+from antifraud_rag.services.cache import CacheStats, EmbeddingCache
 
 __all__ = [
     "FraudAnalyzer",
@@ -56,6 +57,8 @@ __all__ = [
     "AntiFraudError",
     "EmbeddingError",
     "DatabaseNotInitializedError",
+    "EmbeddingCache",
+    "CacheStats",
 ]
 
 __version__ = "1.0.0"

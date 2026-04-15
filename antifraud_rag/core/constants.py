@@ -15,3 +15,9 @@ EMBEDDING_DIMENSION: int = 1536
 HIGH_RISK_THRESHOLD: float = 0.85
 MEDIUM_RISK_THRESHOLD: float = 0.5
 MIN_MATCH_SCORE: float = 0.1
+
+# Embedding cache defaults
+# Max number of text→vector entries held in memory (LRU eviction when full)
+EMBEDDING_CACHE_MAX_SIZE: int = 1000
+# Seconds before a cached entry is considered stale; 0 = never expire
+EMBEDDING_CACHE_TTL_SECONDS: int = 86400  # 24 hours

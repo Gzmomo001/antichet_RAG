@@ -33,20 +33,21 @@ class FraudAnalyzer:
     """
     反欺诈 RAG 系统核心类。
 
-    使用方法:
-        from antifraud_rag import FraudAnalyzer
+    Embedding 缓存默认自动开启，无需任何额外配置。参数来自
+    ``settings.EMBEDDING_CACHE_MAX_SIZE`` / ``settings.EMBEDDING_CACHE_TTL_SECONDS``。
 
-        # 初始化
+    使用方法::
+
+        from antifraud_rag import FraudAnalyzer, Settings
+
+        # 初始化（缓存全自动）
         analyzer = FraudAnalyzer(db_session, settings=my_settings)
 
         # 分析文本风险
         result = await analyzer.analyze("这是一个可疑的电话...")
 
-        # 添加案例到知识库
-        await analyzer.add_case(description="...", fraud_type="电信诈骗")
-
-        # 添加反诈知识
-        await analyzer.add_tip(title="...", content="...")
+        # 查看缓存命中统计
+        print(analyzer.embedding_service.cache_stats)
     """
 
     def __init__(
