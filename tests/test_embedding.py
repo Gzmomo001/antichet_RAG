@@ -196,8 +196,8 @@ class TestEmbeddingService:
             assert "Embedding API error" in str(exc_info.value)
 
 
-class TestEmbeddingServiceWithCache:
-    """Tests for EmbeddingService cache integration."""
+class TestEmbeddingServiceCacheAutoEnabled:
+    """Tests verifying that caching is automatic without manual setup."""
 
     def _make_mock_client(self, embedding: list):
         mock_client_instance = AsyncMock()
@@ -210,27 +210,18 @@ class TestEmbeddingServiceWithCache:
         return mock_client_instance
 
     @pytest.mark.asyncio
-    async def test_cache_miss_calls_api_and_stores_result(self, mock_settings):
-        """On first call the API is invoked and the result is cached."""
-        cache = EmbeddingCache(max_size=10, ttl_seconds=0)
-        service = EmbeddingService(settings=mock_settings, cache=cache)
-        embedding = [0.1] * mock_settings.EMBEDDING_DIMENSION
-
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client_class.return_value = self._make_mock_client(embedding)
-            result = await service.get_embeddings("fraud text")
-
-        assert result == embedding
-        assert cache.stats.misses == 1
-        assert cache.stats.hits == 0
-        assert cache.stats.size == 1
+    async def test_cache_enabled_by_default(self, mock_settings):
+        """EmbeddingService(settings) auto-creates a cache — no manual setup."""
+        service = EmbeddingService(settings=mock_settings)
+        assert service._cache is not None
+        assert service.cache_stats is not None
+        assert service.cache_stats.size == 0
 
     @pytest.mark.asyncio
-    async def test_cache_hit_skips_api_call(self, mock_settings):
-        """Second call with identical text must not hit the API."""
-        cache = EmbeddingCache(max_size=10, ttl_seconds=0)
-        service = EmbeddingService(settings=mock_settings, cache=cache)
-        embedding = [0.2] * mock_settings.EMBEDDING_DIMENSION
+    async def test_auto_cache_stores_result_on_first_call(self, mock_settings):
+        """First call hits API and caches; second call skips API entirely."""
+        service = EmbeddingService(settings=mock_settings)
+        embedding = [0.1] * mock_settings.EMBEDDING_DIMENSION
 
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client_class.return_value = self._make_mock_client(embedding)
@@ -240,15 +231,15 @@ class TestEmbeddingServiceWithCache:
             second = await service.get_embeddings("fraud text")
             mock_client_class_2.assert_not_called()
 
-        assert first == second
-        assert cache.stats.hits == 1
-        assert cache.stats.misses == 1
+        assert first == second == embedding
+        assert service.cache_stats.hits == 1
+        assert service.cache_stats.misses == 1
+        assert service.cache_stats.size == 1
 
     @pytest.mark.asyncio
-    async def test_different_texts_have_separate_cache_entries(self, mock_settings):
-        """Distinct texts must produce independent cache entries."""
-        cache = EmbeddingCache(max_size=10, ttl_seconds=0)
-        service = EmbeddingService(settings=mock_settings, cache=cache)
+    async def test_different_texts_cached_independently(self, mock_settings):
+        """Distinct texts produce independent cache entries automatically."""
+        service = EmbeddingService(settings=mock_settings)
         vec_a = [0.1] * mock_settings.EMBEDDING_DIMENSION
         vec_b = [0.9] * mock_settings.EMBEDDING_DIMENSION
 
@@ -262,13 +253,16 @@ class TestEmbeddingServiceWithCache:
 
         assert result_a == vec_a
         assert result_b == vec_b
-        assert cache.stats.size == 2
+        assert service.cache_stats.size == 2
 
     @pytest.mark.asyncio
-    async def test_no_cache_always_calls_api(self, mock_settings):
-        """When cache=None the API is called every time."""
+    async def test_explicit_none_disables_cache(self, mock_settings):
+        """Passing cache=None explicitly disables caching."""
         service = EmbeddingService(settings=mock_settings, cache=None)
         embedding = [0.5] * mock_settings.EMBEDDING_DIMENSION
+
+        assert service._cache is None
+        assert service.cache_stats is None
 
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client_class.return_value = self._make_mock_client(embedding)
@@ -277,10 +271,18 @@ class TestEmbeddingServiceWithCache:
             assert mock_client_class.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_api_error_does_not_cache_result(self, mock_settings):
-        """Failed API calls must not pollute the cache."""
-        cache = EmbeddingCache(max_size=10, ttl_seconds=0)
-        service = EmbeddingService(settings=mock_settings, cache=cache)
+    async def test_custom_cache_instance_accepted(self, mock_settings):
+        """A user-supplied EmbeddingCache instance is used as-is."""
+        custom_cache = EmbeddingCache(max_size=5, ttl_seconds=60)
+        service = EmbeddingService(settings=mock_settings, cache=custom_cache)
+
+        assert service._cache is custom_cache
+        assert service._cache.max_size == 5
+
+    @pytest.mark.asyncio
+    async def test_api_error_does_not_pollute_cache(self, mock_settings):
+        """Failed API calls must not write anything into the cache."""
+        service = EmbeddingService(settings=mock_settings)
 
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client_instance = AsyncMock()
@@ -292,4 +294,18 @@ class TestEmbeddingServiceWithCache:
             with pytest.raises(EmbeddingError):
                 await service.get_embeddings("text")
 
-        assert cache.stats.size == 0
+        assert service.cache_stats.size == 0
+
+    @pytest.mark.asyncio
+    async def test_cache_uses_settings_max_size(self, mock_settings):
+        """Auto-created cache respects EMBEDDING_CACHE_MAX_SIZE from settings."""
+        service = EmbeddingService(settings=mock_settings)
+        assert service._cache is not None
+        assert service._cache.max_size == mock_settings.EMBEDDING_CACHE_MAX_SIZE
+
+    @pytest.mark.asyncio
+    async def test_cache_uses_settings_ttl(self, mock_settings):
+        """Auto-created cache respects EMBEDDING_CACHE_TTL_SECONDS from settings."""
+        service = EmbeddingService(settings=mock_settings)
+        assert service._cache is not None
+        assert service._cache.ttl_seconds == mock_settings.EMBEDDING_CACHE_TTL_SECONDS
