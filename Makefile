@@ -18,8 +18,7 @@
 # Example: make install
 # -----------------------------------------------------------------------------
 install: ## Create venv and install dependencies
-	uv venv
-	uv pip install -e ".[dev]"
+	uv sync --all-extras
 
 # -----------------------------------------------------------------------------
 # Target: lint
@@ -28,7 +27,7 @@ install: ## Create venv and install dependencies
 # Example: make lint
 # -----------------------------------------------------------------------------
 lint: ## Lint code with ruff
-	ruff check antifraud_rag tests
+	uv run ruff check antifraud_rag tests
 
 # -----------------------------------------------------------------------------
 # Target: fmt
@@ -37,8 +36,8 @@ lint: ## Lint code with ruff
 # Example: make fmt
 # -----------------------------------------------------------------------------
 fmt: ## Format and fix code with ruff
-	ruff format antifraud_rag tests
-	ruff check --fix antifraud_rag tests
+	uv run ruff format antifraud_rag tests
+	uv run ruff check --fix antifraud_rag tests
 
 # -----------------------------------------------------------------------------
 # Target: test
@@ -49,19 +48,19 @@ fmt: ## Format and fix code with ruff
 #          make test-cov      # 运行测试并生成覆盖率报告
 # -----------------------------------------------------------------------------
 test: ## Run tests with pytest
-	pytest tests/ -v $(ARGS)
+	uv run pytest tests/ -v $(ARGS)
 
 test-cov: ## Run tests with coverage report
-	pytest tests/ -v --cov=antifraud_rag --cov-report=term-missing --cov-report=html $(ARGS)
+	uv run pytest tests/ -v --cov=antifraud_rag --cov-report=term-missing --cov-report=html $(ARGS)
 
 test-config: ## Run config/settings tests only
-	pytest tests/test_config.py -v
+	uv run pytest tests/test_config.py -v
 
 test-schemas: ## Run schema validation tests only
-	pytest tests/test_schemas.py -v
+	uv run pytest tests/test_schemas.py -v
 
 test-services: ## Run service layer tests only
-	pytest tests/test_retrieval.py tests/test_embedding.py -v
+	uv run pytest tests/test_retrieval.py tests/test_embedding.py -v
 
 # -----------------------------------------------------------------------------
 # Target: clean

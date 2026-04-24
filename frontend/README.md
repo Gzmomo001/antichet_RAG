@@ -18,10 +18,10 @@
 
 ```bash
 # 在项目根目录 (antichet_RAG/)
-pip install fastapi uvicorn[standard] python-dotenv
+uv sync --all-extras
 
-# 确保已配置 .env 文件（参考 .env.example）
-uvicorn api.main:app --reload --port 8000
+# 确保已配置 .env 文件（参考 .env.example），并已初始化数据库表
+uv run uvicorn api.main:app --reload --port 8000
 ```
 
 ### 2. 启动前端
@@ -46,6 +46,14 @@ npm run dev
 ## 开发说明
 
 Vite 配置了 API 代理，开发时所有 `/api/*` 请求将自动转发到 `http://localhost:8000`。
+
+如需连接不同 API 地址，可设置 `VITE_API_BASE_URL`，例如：
+
+```bash
+VITE_API_BASE_URL=http://localhost:8000/api npm run dev
+```
+
+生产部署使用 React Router 的 history 模式，静态服务器需要将 `/dashboard`、`/analyze` 等前端路由回退到 `index.html`，并确保 `/api` 代理到后端服务，或通过 `VITE_API_BASE_URL` 指向后端 API。
 
 生产构建：
 

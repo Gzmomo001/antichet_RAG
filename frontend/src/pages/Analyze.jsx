@@ -209,14 +209,6 @@ function DirectHitResult({ data }) {
 }
 
 function RAGPromptResult({ data, promptExpanded, setPromptExpanded, onCopyPrompt, copied }) {
-  const riskColorMap = {
-    HIGH: 'text-red-400',
-    MEDIUM: 'text-amber-400',
-    LOW: 'text-green-400',
-  }
-  const riskColor = riskColorMap[data.risk_level] || 'text-green-400'
-  const riskIcon = data.risk_level === 'LOW' ? ShieldCheck : Info
-
   return (
     <div className="space-y-4">
       {/* Summary */}

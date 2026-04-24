@@ -128,7 +128,7 @@ export default function Dashboard() {
           <div className="flex items-center gap-2 text-sm">
             <XCircle size={16} className="text-red-400" />
             <span className="text-red-400 font-medium">
-              无法连接 API — 请启动后端服务（uvicorn api.main:app --reload）
+              无法连接 API — 请启动后端服务（uv run uvicorn api.main:app --reload）
             </span>
           </div>
         )}

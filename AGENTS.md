@@ -9,7 +9,7 @@ Python library for anti-fraud RAG (Retrieval-Augmented Generation) with hybrid s
 ## Quick Commands
 
 ```bash
-make install       # Create venv + install deps via uv
+make install       # Install deps via uv sync
 make test          # Run pytest (auto-sets mock env vars)
 make lint          # ruff check antifraud_rag tests
 make fmt           # ruff format + fix
@@ -70,7 +70,7 @@ async with get_session() as db:
 docker-compose up -d
 
 # Init tables + pgvector extension
-python scripts/init_db.py --db-url postgresql+asyncpg://user:pass@localhost:5432/antifraud
+uv run python scripts/init_db.py --db-url postgresql+asyncpg://user:pass@localhost:5432/antifraud
 ```
 
 English tokenizer used for tsvector; zhparser commented out in `init_db.py`.
