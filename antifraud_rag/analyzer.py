@@ -227,7 +227,7 @@ class FraudAnalyzer:
             return await self.embedding_service.get_embeddings(text)
         except Exception as e:
             logger.error(f"Embedding error: {e}")
-            raise EmbeddingError(f"Failed to get embedding: {str(e)}")
+            raise EmbeddingError(f"Failed to get embedding: {str(e)}") from e
 
     async def _search_cases(self, text: str, embedding: List[float]) -> List[Dict[str, Any]]:
         """执行混合搜索并返回融合结果。"""
