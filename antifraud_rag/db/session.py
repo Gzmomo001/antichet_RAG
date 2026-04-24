@@ -42,3 +42,12 @@ def get_session() -> AsyncSession:
     if async_session_factory is None:
         raise DatabaseNotInitializedError("Database not initialized. Call init_engine() first.")
     return async_session_factory()
+
+
+async def dispose_engine() -> None:
+    """Dispose the current engine and clear the session factory."""
+    global engine, async_session_factory
+    if engine is not None:
+        await engine.dispose()
+    engine = None
+    async_session_factory = None

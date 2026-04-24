@@ -18,21 +18,15 @@
 ## 安装
 
 ```bash
-pip install antifraud-rag
+uv sync
 ```
 
-或使用 `uv`:
-
-```bash
-uv pip install antifraud-rag
-```
-
-开发安装:
+开发安装（含 dev 依赖）:
 
 ```bash
 git clone https://github.com/your-org/antifraud-rag.git
 cd antifraud-rag
-make install
+uv sync --all-extras
 ```
 
 ## 配置
@@ -60,7 +54,7 @@ settings = Settings(
 
 ```bash
 docker-compose up -d db
-python scripts/init_db.py \
+uv run python scripts/init_db.py \
   --db-url postgresql+asyncpg://user:pass@localhost:5432/antifraud \
   --embedding-dimension 1536
 ```
@@ -325,7 +319,7 @@ antifraud_rag/
 - `httpx==0.27.0`
 
 可选依赖:
-- 开发工具: `pip install antifraud-rag[dev]`
+- 开发工具: `uv sync --all-extras`
 
 ## 许可证
 
